@@ -67,7 +67,7 @@ for it = start_it:(start_it+num_its-1)
         old_class = params(it).classes(t);
         % consider late on how to delete the current point's contribution to this class
         params(it) = hidupdateweight_mmc(params(it),old_class,data(t,:));
-        params(it) = handleRemovedClasses_mmc(params(it));
+        params(it) = removeClasses_mmc(params(it));
         if debug, if ~checkParams(params(it),data,t), disp('no check at hide'); end, end
         
         %these are the probabilities that we will sample from
