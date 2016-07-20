@@ -4,7 +4,7 @@ maximum margin dirichlet process mixtures for clustering, refer to https://www.a
 # Basic idea: 
 it is a discriminative model for nonparameteric clustering, which leverages dirchlet process and maximum margin clustering
 
-# Gibbs sampling: 
+#Gibbs sampling: 
 1. it uses dirichlet process as the prior to generate the number of clusters
 2. the likelihood is from maximum margin model
 3. inference is done based on posterior probability
