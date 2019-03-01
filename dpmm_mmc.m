@@ -2,10 +2,12 @@
 % distributable under GPL, see README.txt
 
 function [params, tElapsed] = dpmm_mmc(data, num_its, alpha, params)
-%function params = dpmm_mmc(data, num_its, params)
+%function params = dpmm(data, num_its, params)
 %standard dirichlet process mixture model, with gaussian observations
 %"rao-blackwellised" from, which does not store explicit means or covs
 
+
+addpath('/home/gangchen/Downloads/classifier/cluster/Tcodes');
 ln = @(x)(log(x));
 
 [T, dimension] = size(data);
@@ -15,15 +17,19 @@ debug = false;
 allmean = mean(data,1);
 % allcov = cov(data);
 
-% this constant is very important to balance the likelihood and prior
 C = 1.8; % constant weight % set 3 for glass, wdbc, iris, wine, jain, aggregation,
+
+C = 4.25 % mnist
+
 flag = false;
+% flag = true;
 
 tStart = tic;  % TIC,
 
-% minus mean to align the data
+% minus mean
 data = data- repmat(allmean, [T 1]);
-
+% normalize it
+% data = data./repmat(sqrt(sum(data.^2,2)), [1 dimension]);
 
 if (~exist('params','var'))
     params(1).alpha = T / 50; %1 / wishrnd(1,1);
@@ -31,17 +37,20 @@ if (~exist('params','var'))
     params(1).nu = 6; %a pseudo-count on the covariance
     params(1).initmean = allmean;
     if flag
-        params(1).w = randn(1, dimension+1);
+        params(1).w = randn(1, dimension+1); % data(randi(200,1),:) - allmean; % initialize weight for the first class
     else
         params(1).w = randn(1, dimension);
     end
     params(1).bias = 0; % initialize the bias
     params(1).m = [];
     params(1).wpca = [];
+    % params(1).initcov = allcov / 10;
     params(1).num_classes = 0;
     params(1).counts = 0;
     params(1).sums = [];
+    % params(1).cholSSE = [];
     params(1).classes = ones(T,1);
+  %  params(1).SSE = [];
     params(1) = addNewClass_mmc(params(1));
     params(1) = unhidupdateweight_mmc(params(1), 1, data);
     if debug, if ~checkParams (params(1), data), disp('no check'); end, end
@@ -61,13 +70,14 @@ for it = start_it:(start_it+num_its-1)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% GIBBS SAMPLING %%%%%%%%%%%%%%%%%%%%%%%
     t_order = randperm(T);
     for sctr = 1:T        
-        %data randomization
+        %t = sctr+1;%for debugging
         t = t_order(sctr);
 
         old_class = params(it).classes(t);
-        % consider late on how to delete the current point's contribution to this class
-        params(it) = hidupdateweight_mmc(params(it),old_class,data(t,:));
-        params(it) = removeClasses_mmc(params(it));
+        % Gang: consider late on how to delete the current point's contribution to this class
+        %% params(it) = hideObservations(params(it),old_class,data(t,:));
+        params(it) = hidupdateweight(params(it),old_class,data(t,:));
+        params(it) = handleRemovedClasses_mmc(params(it));
         if debug, if ~checkParams(params(it),data,t), disp('no check at hide'); end, end
         
         %these are the probabilities that we will sample from
@@ -76,6 +86,7 @@ for it = start_it:(start_it+num_its-1)
 
         p_prior = [];
                 
+        %% params(it) = addNewClass(params(it));  %it will be removed if nothing is put in it
         params(it) = addNewClass_mmc(params(it), flag);  %it will be removed if nothing is put in it
         if debug, if ~checkParams(params(it),data,t), disp('no check at add class'); end, end
         
@@ -85,24 +96,46 @@ for it = start_it:(start_it+num_its-1)
         p_prior = params(it).counts + params(it).alpha * (params(it).counts == 0);        
         
         for i = 1:params(it).num_classes
-            % compute the regularization
+% %            if (params(it).counts(i) == 0), p_prior(i) = params(it).alpha; 
+% %            else p_prior(i) = params(it).counts(i); end
+%             try
+%                 %integrating over the parameters of a
+%                 %normal-inverse-Wishart yields student-t.  
+%                 %this can be approximated by a "moment-matched" Gaussian, 
+%                 %see sudderth thesis p 47
+%                 %kappabar = params(it).counts(i) + params(it).kappa;
+%                 %nubar = params(it).counts(i) + params(it).nu;
+%                 %factor = (kappabar + 1) / (kappabar * (nubar - dimension - 1));
+%                 log_p_obs(i) = normpdfln(data(t,:)', ...
+%                     params(it).sums(i,:)' / kappabar(i),...
+%                     sqrt(factor(i))*params(it).cholSSE(:,:,i));
+%             catch
+%                 disp('mvnpdf throws error');
+%             end
             log_p_obs(i) = 0.5*sum(params(it).w(i, :).^2);
-            score = 0; % this for likelihood
+            score = 0;
             try
                if flag
                    score = params(it).w(i, :)*[1 data(t,:)]';
                else
                    score =  params(it).w(i, :)*data(t,:)';
                end
-               % compute the posterior probability
+               %if score < 1
+               %    log_p_obs(i) = log_p_obs(i) + C*(1-score);
+               %end
                log_p_obs(i) =  -log_p_obs(i) + C*score;% + sum(data(t,:).^2);
+               % log_p_obs(i) =  score/log_p_obs(i);
+               
+               % log_p_obs(i) =ln( 1/(1+exp(-log_p_obs(i))));
             catch
                disp('mvnpdf throws error');
             end
 
             
         end
- 
+        % log_p_obs = exp(log_p_obs)./ repmat(sum(exp(log_p_obs),1),[params(it).num_classes 1]);
+
+
         %lightspeed sample normalizes automatically
         classprobs = p_prior'.*exp(log_p_obs-max(log_p_obs));% classprobs = p_prior'.*log_p_obs;
         
@@ -116,10 +149,21 @@ for it = start_it:(start_it+num_its-1)
             disp('could not sample');
         end
         if debug, if ~checkParams(params(it),data,t), disp('no check at sample'); end, end
-
-
+        % Gang: consider on line updating for the current model w
+        %% params(it) = unhideObservations(params(it),new_class,data(t,:));
+        if new_class == 2
+            stop = 1;
+        end
         params(it) = unhidupdateweight_mmc(params(it),new_class,data(t,:),flag, t_order(1:sctr));
         
+        
+%         if new_class >1 % more than one class, then deploy SVM or LDA
+%             %%add more updating based on the current label
+%             %cdata = data(t_order(1:sctr), :);
+%             %clabel  = params(it).classes(t_order(1:sctr));
+%             %%updating the model based on the current training data
+%             params(it) = onlearnmodel(params(it), data, t_order(1:sctr));
+%         end
         if debug, if ~checkParams(params(it),data), disp('no check at hide'); end, end
         
     end
@@ -138,7 +182,11 @@ for it = start_it:(start_it+num_its-1)
     %in Rasmussen 2000
     params(it).alpha = ars(@logalphapdf, {k, n}, 1, [deriv_up deriv_down], [deriv_up inf]);
 
-end    
+    %this is the version with a totally non-informative prior
+    %params(it).alpha = ars(@logalphapdfNI, {k, n}, 1, [deriv_up deriv_down], [deriv_up inf]);
+end
+    % params(it) = relabel(params(it), data);
+    
     tElapsed = toc(tStart);  % TOC, pair 2  
 end
 
