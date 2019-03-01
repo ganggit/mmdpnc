@@ -52,6 +52,20 @@ for didx = 1: size(data,1)
 
     end
     dim = size(params.w, 2);
+    % params.w = params.w./repmat(sqrt(sum(params.w.^2, 2))+0.001, [1 dim]);
+
+    % if(clsid~=new_class)
+    %     % update the model;
+    %     params.w(new_class,:) = params.w(new_class,:) + min(learnrate, prior(new_class)*loss/sum(x.^2))*x;
+    %     params.w(clsid,:) = params.w(clsid,:) - min(learnrate, prior(clsid)*loss/sum(x.^2))*x;
+    %     % normalize it
+    %     neww = params.w;
+    %     dim = size(neww, 2);
+    %     neww = neww./repmat(sqrt(sum(neww.^2, 2))+0.001, [1 dim]);
+    %     params.w = neww;
+    %     % params.counts(clsid) = params.counts(clsid) - size(x,1);
+    %     
+    % end
 end
 
 params.counts(new_class) = params.counts(new_class) + size(data,1);
